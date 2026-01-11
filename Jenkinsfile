@@ -176,9 +176,9 @@ pipeline {
             )
 
             // Slack notification (optionnel)
-            // slackSend channel: "${SLACK_CHANNEL}",
-            //           color: 'danger',
-            //           message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
+            slackSend channel: "${SLACK_CHANNEL}",
+                      color: 'danger',
+                      message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
         }
     }
 }
