@@ -127,7 +127,7 @@ slack {
 sendMail {
     smtpServer {
         host "smtp.gmail.com"
-        port 587
+        port 465
         user System.getenv('GMAIL_USER')
         password System.getenv('GMAIL_APP_PASSWORD') // put ur app password here
     }
