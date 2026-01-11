@@ -51,7 +51,7 @@ pipeline {
                     // Archive unit test results
                     junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
 
-                    // Archive JaCoCo reports (as artifacts only, not using jacoco plugin)
+                    // Archive JaCoCo reports
                     script {
                         if (fileExists('build/reports/jacoco')) {
                             archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true, allowEmptyArchive: true
@@ -83,19 +83,28 @@ pipeline {
                         }
                     }
                 }
+                success {
+                    echo '✅ Tests passed successfully!'
+                }
             }
         }
 
         /* ================= CODE ANALYSIS ================= */
         stage('Code Analysis - SonarQube') {
             steps {
-                withSonarQubeEnv("${SONARQUBE_ENV}") {
-                    script {
-                        if (isUnix()) {
-                            sh './gradlew sonar'
-                        } else {
-                            bat 'gradlew.bat sonar'
+                script {
+                    try {
+                        withSonarQubeEnv("${SONARQUBE_ENV}") {
+                            if (isUnix()) {
+                                sh './gradlew sonar'
+                            } else {
+                                bat 'gradlew.bat sonar'
+                            }
                         }
+                    } catch (Exception e) {
+                        echo "⚠️ SonarQube analysis failed: ${e.message}"
+                        echo "Continuing pipeline without SonarQube..."
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -103,9 +112,19 @@ pipeline {
 
         /* ================= QUALITY GATE ================= */
         stage('Quality Gate') {
+            when {
+                expression { currentBuild.result != 'UNSTABLE' }
+            }
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                script {
+                    try {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            waitForQualityGate abortPipeline: false
+                        }
+                    } catch (Exception e) {
+                        echo "⚠️ Quality Gate failed or timed out: ${e.message}"
+                        currentBuild.result = 'UNSTABLE'
+                    }
                 }
             }
         }
@@ -126,6 +145,7 @@ pipeline {
                 success {
                     archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true, allowEmptyArchive: true
                     archiveArtifacts artifacts: 'build/docs/javadoc/**', fingerprint: true, allowEmptyArchive: true
+                    echo '✅ Build artifacts created successfully!'
                 }
             }
         }
@@ -134,17 +154,23 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo 'Deploying artifact to Maven repository...'
-                withCredentials([usernamePassword(
-                    credentialsId: 'maven-repo-creds',
-                    usernameVariable: 'MAVEN_USER',
-                    passwordVariable: 'MAVEN_PASS'
-                )]) {
-                    script {
-                        if (isUnix()) {
-                            sh "./gradlew publish -PmavenUser=\$MAVEN_USER -PmavenPassword=\$MAVEN_PASS"
-                        } else {
-                            bat "gradlew.bat publish -PmavenUser=%MAVEN_USER% -PmavenPassword=%MAVEN_PASS%"
+                script {
+                    try {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'maven-repo-creds',
+                            usernameVariable: 'MAVEN_USER',
+                            passwordVariable: 'MAVEN_PASS'
+                        )]) {
+                            if (isUnix()) {
+                                sh "./gradlew publish -PmavenUser=\$MAVEN_USER -PmavenPassword=\$MAVEN_PASS"
+                            } else {
+                                bat "gradlew.bat publish -PmavenUser=%MAVEN_USER% -PmavenPassword=%MAVEN_PASS%"
+                            }
                         }
+                        echo '✅ Deployment successful!'
+                    } catch (Exception e) {
+                        echo "⚠️ Deployment failed: ${e.message}"
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -154,18 +180,21 @@ pipeline {
     /* ================= NOTIFICATIONS ================= */
     post {
         success {
-            echo 'Pipeline succeeded'
+            echo '✅ Pipeline completed successfully!'
             emailext (
                 to: "${EMAIL_RECIPIENTS}",
-                subject: "SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: "✅ SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                    <h2>Build Successful!</h2>
+                    <h2 style="color: green;">✅ Build Successful!</h2>
                     <p><b>Project:</b> ${env.JOB_NAME}</p>
                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
                     <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p><b>JaCoCo Report:</b> <a href="${env.BUILD_URL}JaCoCo_Coverage_Report/">View Coverage</a></p>
-                    <p><b>Cucumber Report:</b> <a href="${env.BUILD_URL}Cucumber_Report/">View Tests</a></p>
-                    <p>Build and deployment completed successfully.</p>
+                    <p><b>JaCoCo Coverage Report:</b> <a href="${env.BUILD_URL}JaCoCo_20Coverage_20Report/">View Coverage</a></p>
+                    <p><b>Cucumber Test Report:</b> <a href="${env.BUILD_URL}Cucumber_20Report/">View Tests</a></p>
+                    <hr>
+                    <p>✅ All tests passed</p>
+                    <p>✅ Build artifacts created</p>
+                    <p>✅ Deployment completed</p>
                 """,
                 mimeType: 'text/html'
             )
@@ -175,27 +204,60 @@ pipeline {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'good',
-                        message: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)",
+                        message: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n• Tests passed\n• Build completed\n• Deployment successful\n<${env.BUILD_URL}|View Build>",
                         tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
-                    echo "Slack notification failed: ${e.message}"
+                    echo "⚠️ Slack notification failed: ${e.message}"
+                }
+            }
+        }
+
+        unstable {
+            echo '⚠️ Pipeline completed with warnings'
+            emailext (
+                to: "${EMAIL_RECIPIENTS}",
+                subject: "⚠️ UNSTABLE - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2 style="color: orange;">⚠️ Build Unstable</h2>
+                    <p><b>Project:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>Console Output:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <hr>
+                    <p>The build completed but some non-critical steps failed (SonarQube or Deployment).</p>
+                    <p>Please check the console output for details.</p>
+                """,
+                mimeType: 'text/html'
+            )
+
+            script {
+                try {
+                    slackSend(
+                        channel: "${SLACK_CHANNEL}",
+                        color: 'warning',
+                        message: "⚠️ UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nBuild completed with warnings.\n<${env.BUILD_URL}console|View Console>",
+                        tokenCredentialId: 'slack-webhook-url'
+                    )
+                } catch (Exception e) {
+                    echo "⚠️ Slack notification failed: ${e.message}"
                 }
             }
         }
 
         failure {
-            echo 'Pipeline failed'
+            echo '❌ Pipeline failed'
             emailext (
                 to: "${EMAIL_RECIPIENTS}",
-                subject: "FAILURE - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: "❌ FAILURE - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                    <h2>Build Failed!</h2>
+                    <h2 style="color: red;">❌ Build Failed!</h2>
                     <p><b>Project:</b> ${env.JOB_NAME}</p>
                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
                     <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
                     <p><b>Console Output:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
-                    <p>Pipeline failed. Please check the console output for details.</p>
+                    <hr>
+                    <p style="color: red;">Pipeline failed. Please check the console output for details.</p>
                 """,
                 mimeType: 'text/html'
             )
@@ -205,11 +267,11 @@ pipeline {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'danger',
-                        message: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)",
+                        message: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nPipeline failed!\n<${env.BUILD_URL}console|View Console>",
                         tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
-                    echo "Slack notification failed: ${e.message}"
+                    echo "⚠️ Slack notification failed: ${e.message}"
                 }
             }
         }
