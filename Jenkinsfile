@@ -7,6 +7,7 @@ pipeline {
     }
 
     environment {
+        SONARQUBE_ENV = 'sonarqube'  // Nom exact de l'installation SonarQube dans Jenkins
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
         SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
@@ -93,14 +94,18 @@ pipeline {
             steps {
                 script {
                     try {
-                        if (isUnix()) {
-                            sh './gradlew sonar'
-                        } else {
-                            bat 'gradlew.bat sonar'
+                        withSonarQubeEnv("${SONARQUBE_ENV}") {
+                            if (isUnix()) {
+                                sh './gradlew sonar'
+                            } else {
+                                bat 'gradlew.bat sonar'
+                            }
                         }
+                        env.SONAR_ANALYSIS_COMPLETED = 'true'
                     } catch (Exception e) {
                         echo "⚠️ SonarQube analysis failed: ${e.message}"
                         echo "Continuing pipeline without SonarQube..."
+                        env.SONAR_ANALYSIS_COMPLETED = 'false'
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -110,13 +115,19 @@ pipeline {
         /* ================= QUALITY GATE ================= */
         stage('Quality Gate') {
             when {
-                expression { currentBuild.result != 'UNSTABLE' }
+                expression { env.SONAR_ANALYSIS_COMPLETED == 'true' }
             }
             steps {
                 script {
                     try {
                         timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: false
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                echo "⚠️ Quality Gate status: ${qg.status}"
+                                currentBuild.result = 'UNSTABLE'
+                            } else {
+                                echo "✅ Quality Gate passed!"
+                            }
                         }
                     } catch (Exception e) {
                         echo "⚠️ Quality Gate failed or timed out: ${e.message}"
