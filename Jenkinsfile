@@ -40,9 +40,9 @@ pipeline {
                 echo 'Running unit tests and generating Cucumber reports...'
                 script {
                     if (isUnix()) {
-                        sh './gradlew clean test generateCucumberReports jacocoTestReport --stacktrace --info'
+                        sh './gradlew clean test generateCucumberReports jacocoTestReport --stacktrace'
                     } else {
-                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport --stacktrace --info'
+                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport --stacktrace'
                     }
                 }
             }
@@ -51,30 +51,12 @@ pipeline {
                     // Archive unit test results
                     junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
 
-                    // Archive artifacts only if they exist
+                    // Archive JaCoCo reports (as artifacts only, not using jacoco plugin)
                     script {
                         if (fileExists('build/reports/jacoco')) {
                             archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true, allowEmptyArchive: true
-                        }
-                        if (fileExists('build/reports/cucumber')) {
-                            archiveArtifacts artifacts: 'build/reports/cucumber/**', fingerprint: true, allowEmptyArchive: true
-                        }
-                    }
 
-                    // Publish JaCoCo coverage report only if files exist
-                    script {
-                        if (fileExists('build/jacoco') && fileExists('build/classes/java/main')) {
-                            jacoco(
-                                execPattern: 'build/jacoco/*.exec',
-                                classPattern: 'build/classes/java/main',
-                                sourcePattern: 'src/main/java'
-                            )
-                        }
-                    }
-
-                    // Publish HTML reports only if they exist
-                    script {
-                        if (fileExists('build/reports/jacoco/test/html/index.html')) {
+                            // Publish JaCoCo HTML report
                             publishHTML(target: [
                                 allowMissing: true,
                                 alwaysLinkToLastBuild: true,
@@ -85,7 +67,11 @@ pipeline {
                             ])
                         }
 
-                        if (fileExists('build/reports/cucumber/cucumber-html-reports/overview-features.html')) {
+                        // Archive Cucumber reports
+                        if (fileExists('build/reports/cucumber')) {
+                            archiveArtifacts artifacts: 'build/reports/cucumber/**', fingerprint: true, allowEmptyArchive: true
+
+                            // Publish Cucumber HTML report
                             publishHTML(target: [
                                 allowMissing: true,
                                 alwaysLinkToLastBuild: true,
@@ -177,6 +163,8 @@ pipeline {
                     <p><b>Project:</b> ${env.JOB_NAME}</p>
                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
                     <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>JaCoCo Report:</b> <a href="${env.BUILD_URL}JaCoCo_Coverage_Report/">View Coverage</a></p>
+                    <p><b>Cucumber Report:</b> <a href="${env.BUILD_URL}Cucumber_Report/">View Tests</a></p>
                     <p>Build and deployment completed successfully.</p>
                 """,
                 mimeType: 'text/html'
@@ -187,7 +175,7 @@ pipeline {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'good',
-                        message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)",
+                        message: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)",
                         tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
@@ -217,7 +205,7 @@ pipeline {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'danger',
-                        message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)",
+                        message: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)",
                         tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
