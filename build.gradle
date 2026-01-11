@@ -1,0 +1,139 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'maven-publish'
+    id 'org.sonarqube' version '4.4.1.3373'
+    id "com.github.spacialcircumstances.gradle-cucumber-reporting" version "0.1.25"
+    id("io.github.oleksiiparf.slack-webhook") version "1.0.0"
+    id 'de.zebrajaeger.sendMail' version "0.1.1"
+}
+
+group = 'com.bensreda'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+
+    maven {
+        url "https://repo.maven.apache.org/maven2"
+    }
+    maven {
+        url "https://plugins.gradle.org/m2/"
+    }
+}
+
+dependencies {
+    testImplementation 'io.cucumber:cucumber-java:6.0.0'
+    testImplementation 'io.cucumber:cucumber-junit:6.0.0'
+    testImplementation 'junit:junit:4.12'
+}
+
+// Configuration pour que les tests Cucumber génèrent un fichier JSON
+test {
+    systemProperty 'cucumber.plugin',
+            'json:build/reports/cucumber/cucumber.json'
+    outputs.upToDateWhen { false }
+
+    // Activer JaCoCo pour les tests
+    finalizedBy jacocoTestReport
+}
+
+// Configuration du plugin de reporting Cucumber
+cucumberReports {
+    outputDir = file('build/reports/cucumber')
+    buildId = '0'
+    reports = files('build/reports/cucumber/cucumber.json')
+}
+
+// Configuration de JaCoCo
+jacoco {
+    toolVersion = '0.8.8'
+}
+
+// Configuration du rapport de couverture JaCoCo
+jacocoTestReport {
+    dependsOn test  // Le rapport est généré après les tests
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// Configuration de SonarQube
+sonarqube {
+    properties {
+        property 'sonar.projectKey', 'TPJENKIN'
+        property 'sonar.projectName', 'TPJENKIN'
+        property 'sonar.host.url', 'http://localhost:9000'
+        property 'sonar.token', '6828dbfc84482fe1cdd9cc01023650892795d489'
+        property 'sonar.java.coveragePlugin', 'jacoco'
+        property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
+    }
+}
+
+// Dépendance : SonarQube s'exécute après les tests
+tasks.named('sonar') {
+    dependsOn test, jacocoTestReport
+}
+
+// S'assurer que le rapport Cucumber est généré après les tests
+generateCucumberReports.dependsOn test
+
+// Configuration Maven Publishing
+publishing {
+    repositories {
+        maven {
+            name = 'myrepo'
+            url = uri('https://mymavenrepo.com/repo/cEmjfkxugPlzLxXg1A2B/')
+            credentials {
+                username = 'myMavenRepo'
+                password = 'test0005'
+            }
+        }
+    }
+
+    publications {
+        mavenJava(MavenPublication) {
+            groupId 'bensemane'
+            artifactId 'build-tools-bensemane'
+            version '1.0.0'
+            from components.java
+        }
+    }
+}
+
+/* ===================== SLACK ===================== */
+slack {
+    builtSucceed {
+        webHook = System.getenv('SLACK_WEBHOOK_URL') // put ur webhook url here
+        attachment {
+            fallback = "Project successfully built."
+            pretext = "Project successfully built."
+            field {
+                title = "Module"
+                value = project.name
+                shortValue = true
+            }
+            field {
+                title = "Version"
+                value = project.version
+                shortValue = true
+            }
+        }
+    }
+}
+
+/* ===================== EMAIL ===================== */
+sendMail {
+    smtpServer {
+        host "smtp.gmail.com"
+        port 587
+        user System.getenv('GMAIL_USER')
+        password System.getenv('GMAIL_APP_PASSWORD') // put ur app password here
+    }
+    mail {
+        from System.getenv('GMAIL_USER')
+        to "mm_bensemane@esi.dz"
+        subject "Build Succeeded: ${project.name}"
+    }
+}
