@@ -10,15 +10,29 @@ pipeline {
         SONARQUBE_ENV = 'SonarQube'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
-        // Variables pour les notifications via Gradle (optionnel)
         SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
         GMAIL_USER = 'mm_bensemane@esi.dz'
         GMAIL_APP_PASSWORD = credentials('gmail-app-password')
-        // Fix pour les problèmes SSL/TLS de Gradle
         GRADLE_OPTS = '-Djavax.net.ssl.trustStoreType=Windows-ROOT -Djavax.net.ssl.trustStore=NONE'
     }
 
     stages {
+
+        /* ================= ENVIRONMENT CHECK ================= */
+        stage('Environment Check') {
+            steps {
+                echo 'Checking Java and Gradle versions...'
+                script {
+                    if (isUnix()) {
+                        sh 'java -version'
+                        sh './gradlew --version'
+                    } else {
+                        bat 'java -version'
+                        bat 'gradlew.bat --version'
+                    }
+                }
+            }
+        }
 
         /* ===================== TEST ===================== */
         stage('Test') {
@@ -26,9 +40,9 @@ pipeline {
                 echo 'Running unit tests and generating Cucumber reports...'
                 script {
                     if (isUnix()) {
-                        sh './gradlew clean test generateCucumberReports jacocoTestReport'
+                        sh './gradlew clean test generateCucumberReports jacocoTestReport --stacktrace --info'
                     } else {
-                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport'
+                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport --stacktrace --info'
                     }
                 }
             }
@@ -37,38 +51,51 @@ pipeline {
                     // Archive unit test results
                     junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
 
-                    // Archive JaCoCo coverage reports
-                    archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true
+                    // Archive artifacts only if they exist
+                    script {
+                        if (fileExists('build/reports/jacoco')) {
+                            archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true, allowEmptyArchive: true
+                        }
+                        if (fileExists('build/reports/cucumber')) {
+                            archiveArtifacts artifacts: 'build/reports/cucumber/**', fingerprint: true, allowEmptyArchive: true
+                        }
+                    }
 
-                    // Archive Cucumber reports
-                    archiveArtifacts artifacts: 'build/reports/cucumber/**', fingerprint: true
+                    // Publish JaCoCo coverage report only if files exist
+                    script {
+                        if (fileExists('build/jacoco') && fileExists('build/classes/java/main')) {
+                            jacoco(
+                                execPattern: 'build/jacoco/*.exec',
+                                classPattern: 'build/classes/java/main',
+                                sourcePattern: 'src/main/java'
+                            )
+                        }
+                    }
 
-                    // Publish JaCoCo coverage report
-                    jacoco(
-                        execPattern: 'build/jacoco/*.exec',
-                        classPattern: 'build/classes/java/main',
-                        sourcePattern: 'src/main/java'
-                    )
+                    // Publish HTML reports only if they exist
+                    script {
+                        if (fileExists('build/reports/jacoco/test/html/index.html')) {
+                            publishHTML(target: [
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'build/reports/jacoco/test/html',
+                                reportFiles: 'index.html',
+                                reportName: 'JaCoCo Coverage Report'
+                            ])
+                        }
 
-                    // Publish HTML reports
-                    publishHTML(target: [
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'build/reports/jacoco/test/html',
-                        reportFiles: 'index.html',
-                        reportName: 'JaCoCo Coverage Report'
-                    ])
-
-                    // Publish Cucumber reports
-                    publishHTML(target: [
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'build/reports/cucumber/cucumber-html-reports',
-                        reportFiles: 'overview-features.html',
-                        reportName: 'Cucumber Report'
-                    ])
+                        if (fileExists('build/reports/cucumber/cucumber-html-reports/overview-features.html')) {
+                            publishHTML(target: [
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'build/reports/cucumber/cucumber-html-reports',
+                                reportFiles: 'overview-features.html',
+                                reportName: 'Cucumber Report'
+                            ])
+                        }
+                    }
                 }
             }
         }
@@ -111,8 +138,8 @@ pipeline {
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true
-                    archiveArtifacts artifacts: 'build/docs/javadoc/**', fingerprint: true
+                    archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true, allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'build/docs/javadoc/**', fingerprint: true, allowEmptyArchive: true
                 }
             }
         }
@@ -155,13 +182,13 @@ pipeline {
                 mimeType: 'text/html'
             )
 
-            // Slack notification (nécessite le plugin Slack Notification)
             script {
                 try {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'good',
-                        message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)"
+                        message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)",
+                        tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
                     echo "Slack notification failed: ${e.message}"
@@ -185,13 +212,13 @@ pipeline {
                 mimeType: 'text/html'
             )
 
-            // Slack notification
             script {
                 try {
                     slackSend(
                         channel: "${SLACK_CHANNEL}",
                         color: 'danger',
-                        message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
+                        message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)",
+                        tokenCredentialId: 'slack-webhook-url'
                     )
                 } catch (Exception e) {
                     echo "Slack notification failed: ${e.message}"
