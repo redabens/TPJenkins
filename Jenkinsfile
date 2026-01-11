@@ -8,9 +8,12 @@ pipeline {
 
     environment {
         SONARQUBE_ENV = 'SonarQube'
-        MAVEN_REPO_URL = 'https://mymavenrepo.com/repo/cEmjfkxugPlzLxXg1A2B/'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
+        // Variables pour Gradle (optionnel si vous voulez utiliser Slack/Email depuis Gradle)
+        SLACK_WEBHOOK_URL = credentials('slack-webhook-url')  // Si configuré
+        GMAIL_USER = 'mm_bensemane@esi.dz'
+        GMAIL_APP_PASSWORD = credentials('gmail-app-password')  // Si configuré
     }
 
     stages {
@@ -21,9 +24,9 @@ pipeline {
                 echo 'Running unit tests and generating Cucumber reports...'
                 script {
                     if (isUnix()) {
-                        sh './gradlew clean test cucumber jacocoTestReport'
+                        sh './gradlew clean test generateCucumberReports jacocoTestReport'
                     } else {
-                        bat 'gradlew.bat clean test cucumber jacocoTestReport'
+                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport'
                     }
                 }
             }
@@ -31,11 +34,20 @@ pipeline {
                 always {
                     // Archive unit test results
                     junit 'build/test-results/test/*.xml'
-                    archiveArtifacts artifacts: 'build/reports/tests/**', fingerprint: true
+
                     // Archive JaCoCo coverage reports
                     archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true
+
                     // Archive Cucumber reports
                     archiveArtifacts artifacts: 'build/reports/cucumber/**', fingerprint: true
+
+                    // Publish JaCoCo coverage report
+                    jacoco(
+                        execPattern: 'build/jacoco/*.exec',
+                        classPattern: 'build/classes/java/main',
+                        sourcePattern: 'src/main/java'
+                    )
+
                     // Publish HTML reports
                     publishHTML(target: [
                         allowMissing: false,
@@ -45,6 +57,8 @@ pipeline {
                         reportFiles: 'index.html',
                         reportName: 'JaCoCo Coverage Report'
                     ])
+
+                    // Publish Cucumber reports
                     publishHTML(target: [
                         allowMissing: false,
                         alwaysLinkToLastBuild: true,
@@ -75,7 +89,7 @@ pipeline {
         /* ================= QUALITY GATE ================= */
         stage('Quality Gate') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
+                timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -87,9 +101,9 @@ pipeline {
                 echo 'Building JAR and Javadoc...'
                 script {
                     if (isUnix()) {
-                        sh './gradlew build javadoc'
+                        sh './gradlew build javadoc -x test'
                     } else {
-                        bat 'gradlew.bat build javadoc'
+                        bat 'gradlew.bat build javadoc -x test'
                     }
                 }
             }
@@ -107,12 +121,12 @@ pipeline {
                 echo 'Deploying artifact to Maven repository...'
                 withCredentials([usernamePassword(
                     credentialsId: 'maven-repo-creds',
-                    usernameVariable: 'myMavenRepo',
-                    passwordVariable: 'test0005'
+                    usernameVariable: 'MAVEN_USER',
+                    passwordVariable: 'MAVEN_PASS'
                 )]) {
                     script {
                         if (isUnix()) {
-                            sh "./gradlew publish -PmavenUser=$MAVEN_USER -PmavenPassword=$MAVEN_PASS"
+                            sh "./gradlew publish -PmavenUser=\$MAVEN_USER -PmavenPassword=\$MAVEN_PASS"
                         } else {
                             bat "gradlew.bat publish -PmavenUser=%MAVEN_USER% -PmavenPassword=%MAVEN_PASS%"
                         }
@@ -126,22 +140,45 @@ pipeline {
     post {
         success {
             echo 'Pipeline succeeded'
-            mail to: "${EMAIL_RECIPIENTS}",
-                 subject: "SUCCESS - Jenkins Pipeline",
-                 body: "Build and deployment completed successfully."
+            emailext (
+                to: "${EMAIL_RECIPIENTS}",
+                subject: "SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>Build Successful!</h2>
+                    <p><b>Project:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p>Build and deployment completed successfully.</p>
+                """,
+                mimeType: 'text/html'
+            )
 
-            slackSend channel: "${SLACK_CHANNEL}",
-                      message: "SUCCESS: API deployed successfully."
+            // Slack notification (optionnel - nécessite le plugin Slack)
+            // slackSend channel: "${SLACK_CHANNEL}",
+            //           color: 'good',
+            //           message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)"
         }
 
         failure {
             echo 'Pipeline failed'
-            mail to: "${EMAIL_RECIPIENTS}",
-                 subject: "FAILURE - Jenkins Pipeline",
-                 body: "Pipeline failed. Please check Jenkins logs."
+            emailext (
+                to: "${EMAIL_RECIPIENTS}",
+                subject: "FAILURE - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>Build Failed!</h2>
+                    <p><b>Project:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>Console Output:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <p>Pipeline failed. Please check the console output for details.</p>
+                """,
+                mimeType: 'text/html'
+            )
 
-            slackSend channel: "${SLACK_CHANNEL}",
-                      message: "FAILURE: Jenkins pipeline failed."
+            // Slack notification (optionnel)
+            // slackSend channel: "${SLACK_CHANNEL}",
+            //           color: 'danger',
+            //           message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
         }
     }
 }
