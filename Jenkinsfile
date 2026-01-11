@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         SONARQUBE_ENV = 'SonarQube'
-        MAVEN_REPO_URL = 'https://mymavenrepo.com'
+        MAVEN_REPO_URL = 'https://mymavenrepo.com/repo/cEmjfkxugPlzLxXg1A2B/'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
     }
@@ -107,8 +107,8 @@ pipeline {
                 echo 'Deploying artifact to Maven repository...'
                 withCredentials([usernamePassword(
                     credentialsId: 'maven-repo-creds',
-                    usernameVariable: 'MAVEN_USER',
-                    passwordVariable: 'MAVEN_PASS'
+                    usernameVariable: 'myMavenRepo',
+                    passwordVariable: 'test0005'
                 )]) {
                     script {
                         if (isUnix()) {
