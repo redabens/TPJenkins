@@ -7,7 +7,6 @@ pipeline {
     }
 
     environment {
-        SONARQUBE_ENV = 'sonarqube'  // Nom exact de l'installation SonarQube dans Jenkins
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
         SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
@@ -94,12 +93,10 @@ pipeline {
             steps {
                 script {
                     try {
-                        withSonarQubeEnv("${SONARQUBE_ENV}") {
-                            if (isUnix()) {
-                                sh './gradlew sonar'
-                            } else {
-                                bat 'gradlew.bat sonar'
-                            }
+                        if (isUnix()) {
+                            sh './gradlew sonar'
+                        } else {
+                            bat 'gradlew.bat sonar'
                         }
                     } catch (Exception e) {
                         echo "⚠️ SonarQube analysis failed: ${e.message}"
