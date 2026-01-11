@@ -10,10 +10,12 @@ pipeline {
         SONARQUBE_ENV = 'SonarQube'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
-        // Variables pour Gradle (optionnel si vous voulez utiliser Slack/Email depuis Gradle)
-        SLACK_WEBHOOK_URL = credentials('slack-webhook-url')  // Si configuré
+        // Variables pour les notifications via Gradle (optionnel)
+        SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
         GMAIL_USER = 'mm_bensemane@esi.dz'
-        GMAIL_APP_PASSWORD = credentials('gmail-app-password')  // Si configuré
+        GMAIL_APP_PASSWORD = credentials('gmail-app-password')
+        // Fix pour les problèmes SSL/TLS de Gradle
+        GRADLE_OPTS = '-Djavax.net.ssl.trustStoreType=Windows-ROOT -Djavax.net.ssl.trustStore=NONE'
     }
 
     stages {
@@ -33,7 +35,7 @@ pipeline {
             post {
                 always {
                     // Archive unit test results
-                    junit 'build/test-results/test/*.xml'
+                    junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
 
                     // Archive JaCoCo coverage reports
                     archiveArtifacts artifacts: 'build/reports/jacoco/**', fingerprint: true
@@ -153,10 +155,18 @@ pipeline {
                 mimeType: 'text/html'
             )
 
-            // Slack notification (optionnel - nécessite le plugin Slack)
-            // slackSend channel: "${SLACK_CHANNEL}",
-            //           color: 'good',
-            //           message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)"
+            // Slack notification (nécessite le plugin Slack Notification)
+            script {
+                try {
+                    slackSend(
+                        channel: "${SLACK_CHANNEL}",
+                        color: 'good',
+                        message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} - API deployed successfully. (<${env.BUILD_URL}|Open>)"
+                    )
+                } catch (Exception e) {
+                    echo "Slack notification failed: ${e.message}"
+                }
+            }
         }
 
         failure {
@@ -175,10 +185,18 @@ pipeline {
                 mimeType: 'text/html'
             )
 
-            // Slack notification (optionnel)
-            slackSend channel: "${SLACK_CHANNEL}",
-                      color: 'danger',
-                      message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
+            // Slack notification
+            script {
+                try {
+                    slackSend(
+                        channel: "${SLACK_CHANNEL}",
+                        color: 'danger',
+                        message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} - Pipeline failed. (<${env.BUILD_URL}|Open>)"
+                    )
+                } catch (Exception e) {
+                    echo "Slack notification failed: ${e.message}"
+                }
+            }
         }
     }
 }
