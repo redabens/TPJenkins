@@ -130,11 +130,11 @@ sendMail {
     smtpServer {
         host "smtp.gmail.com"
         port 465
-        user project.property('gmailUser')
-        password project.property('gmailAppPassword') // put ur app password here
+        username = project.hasProperty('gmailUser') ? project.property('gmailUser') : ''
+        password = project.hasProperty('gmailAppPassword') ? project.property('gmailAppPassword') : ''// put ur app password here
     }
     mail {
-        from project.property('gmailUser')
+        from project.hasProperty('gmailUser') ? project.property('gmailUser') : ''
         to "mm_bensemane@esi.dz"
         subject "Build Succeeded: ${project.name}"
     }

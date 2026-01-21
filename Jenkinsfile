@@ -72,9 +72,9 @@ pipeline {
                 script {
                     // Dans le Jenkinsfile, étape 'Test'
                     if (isUnix()) {
-                        sh "./gradlew clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=${env.SLACK_WEBHOOK_URL} --stacktrace"
+                        sh "./gradlew clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=${env.SLACK_WEBHOOK_URL} -PgmailUser=${env.GMAIL_USER} -PgmailAppPassword=${env.GMAIL_APP_PASSWORD} --stacktrace"
                     } else {
-                        bat "gradlew.bat clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=%SLACK_WEBHOOK_URL% --stacktrace"
+                        bat "gradlew.bat clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=%SLACK_WEBHOOK_URL% -PgmailUser=%GMAIL_USER% -PgmailAppPassword=%GMAIL_APP_PASSWORD% --stacktrace"
                     }
                 }
             }
