@@ -10,7 +10,6 @@ pipeline {
         SONARQUBE_ENV = 'SonarQube'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
-        GRADLE_OPTS = '-Djavax.net.ssl.trustStoreType=Windows-ROOT -Djavax.net.ssl.trustStore=NONE'
     }
 
     stages {
