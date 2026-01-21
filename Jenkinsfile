@@ -292,15 +292,21 @@ pipeline {
 }
 
 /* ================= HELPER FUNCTIONS ================= */
+// Remplacez sendSlackNotification par :
 def sendSlackNotification(String color, String message) {
     if (env.SLACK_WEBHOOK_URL) {
-        // Utilisation d'une map Groovy convertie en JSON pour éviter les erreurs d'échappement manuel
+        def colorMap = [
+            'good': '#36a64f',
+            'warning': '#ff9800',
+            'danger': '#d32f2f'
+        ]
+
         def payload = groovy.json.JsonOutput.toJson([
             channel: SLACK_CHANNEL,
             username: "Jenkins Bot",
             icon_emoji: ":jenkins:",
             attachments: [[
-                color: color,
+                color: colorMap[color] ?: color,
                 text: message,
                 footer: "Jenkins Pipeline",
                 footer_icon: "https://jenkins.io/images/logos/jenkins/jenkins.png"
@@ -308,11 +314,20 @@ def sendSlackNotification(String color, String message) {
         ])
 
         if (isUnix()) {
-            sh "curl -X POST '${env.SLACK_WEBHOOK_URL}' -H 'Content-Type: application/json' -d '${payload}'"
+            sh """
+                curl -X POST '${env.SLACK_WEBHOOK_URL}' \
+                -H 'Content-Type: application/json' \
+                -d '${payload}'
+            """
         } else {
-            // Utilisation d'un échappement plus robuste pour PowerShell
-            def escapedPayload = payload.replace('"', '\"\"')
-            bat "powershell -Command \"Invoke-RestMethod -Uri '${env.SLACK_WEBHOOK_URL}' -Method Post -Body '${escapedPayload}' -ContentType 'application/json'\""
+            // Utiliser un fichier temporaire pour Windows
+            def tempFile = "${env.WORKSPACE}\\slack-payload.json"
+            writeFile file: tempFile, text: payload
+            bat """
+                @echo off
+                powershell -Command "Invoke-RestMethod -Uri '${env.SLACK_WEBHOOK_URL}' -Method Post -Body (Get-Content '${tempFile}' -Raw) -ContentType 'application/json'"
+                if exist "${tempFile}" del "${tempFile}"
+            """
         }
     }
 }
