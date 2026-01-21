@@ -70,10 +70,11 @@ pipeline {
             steps {
                 echo 'Running unit tests and generating Cucumber reports...'
                 script {
+                    // Dans le Jenkinsfile, étape 'Test'
                     if (isUnix()) {
-                        sh './gradlew clean test generateCucumberReports jacocoTestReport --stacktrace'
+                        sh "./gradlew clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=${env.SLACK_WEBHOOK_URL} --stacktrace"
                     } else {
-                        bat 'gradlew.bat clean test generateCucumberReports jacocoTestReport --stacktrace'
+                        bat "gradlew.bat clean test generateCucumberReports jacocoTestReport -PslackWebhookUrl=%SLACK_WEBHOOK_URL% --stacktrace"
                     }
                 }
             }
@@ -292,40 +293,26 @@ pipeline {
 
 /* ================= HELPER FUNCTIONS ================= */
 def sendSlackNotification(String color, String message) {
-    try {
-        if (env.SLACK_WEBHOOK_URL) {
-            def payload = """
-            {
-                "channel": "${SLACK_CHANNEL}",
-                "username": "Jenkins Bot",
-                "icon_emoji": ":jenkins:",
-                "attachments": [{
-                    "color": "${color}",
-                    "text": "${message}",
-                    "footer": "Jenkins Pipeline",
-                    "footer_icon": "https://jenkins.io/images/logos/jenkins/jenkins.png"
-                }]
-            }
-            """
+    if (env.SLACK_WEBHOOK_URL) {
+        // Utilisation d'une map Groovy convertie en JSON pour éviter les erreurs d'échappement manuel
+        def payload = groovy.json.JsonOutput.toJson([
+            channel: SLACK_CHANNEL,
+            username: "Jenkins Bot",
+            icon_emoji: ":jenkins:",
+            attachments: [[
+                color: color,
+                text: message,
+                footer: "Jenkins Pipeline",
+                footer_icon: "https://jenkins.io/images/logos/jenkins/jenkins.png"
+            ]]
+        ])
 
-            if (isUnix()) {
-                sh """
-                    curl -X POST '${env.SLACK_WEBHOOK_URL}' \
-                    -H 'Content-Type: application/json' \
-                    -d '${payload}'
-                """
-            } else {
-                // Échapper les guillemets pour PowerShell
-                def escapedPayload = payload.replace('"', '\\"').replace('\n', ' ')
-                bat """
-                    powershell -Command "Invoke-RestMethod -Uri '${env.SLACK_WEBHOOK_URL}' -Method Post -Body '${escapedPayload}' -ContentType 'application/json'"
-                """
-            }
-            echo "✅ Slack notification sent successfully"
+        if (isUnix()) {
+            sh "curl -X POST '${env.SLACK_WEBHOOK_URL}' -H 'Content-Type: application/json' -d '${payload}'"
         } else {
-            echo "⚠️ Slack webhook URL not configured"
+            // Utilisation d'un échappement plus robuste pour PowerShell
+            def escapedPayload = payload.replace('"', '\"\"')
+            bat "powershell -Command \"Invoke-RestMethod -Uri '${env.SLACK_WEBHOOK_URL}' -Method Post -Body '${escapedPayload}' -ContentType 'application/json'\""
         }
-    } catch (Exception e) {
-        echo "⚠️ Slack notification failed: ${e.message}"
     }
 }
