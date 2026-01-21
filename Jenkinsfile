@@ -17,37 +17,38 @@ pipeline {
 
         /* ================= LOAD CONFIGURATION ================= */
         stage('Load Configuration') {
-                    steps {
-                        script {
-                            // Charger le fichier gradle.properties depuis Config File Provider
-                            configFileProvider([configFile(fileId: 'gradle-properties', variable: 'GRADLE_PROPS_FILE')]) {
-                                // Lire le contenu du fichier
-                                def propsContent = readFile(env.GRADLE_PROPS_FILE)
+            steps {
+                script {
+                    try {
+                        configFileProvider([configFile(fileId: 'gradle-properties', variable: 'GRADLE_PROPS_FILE')]) {
+                            def propsContent = readFile(env.GRADLE_PROPS_FILE)
 
-                                // Parser les propriétés manuellement
-                                propsContent.split('\n').each { line ->
-                                    line = line.trim()
-                                    if (line && !line.startsWith('#') && line.contains('=')) {
-                                        def parts = line.split('=', 2)
-                                        def key = parts[0].trim()
-                                        def value = parts[1].trim()
+                            propsContent.split('\n').each { line ->
+                                line = line.trim()
+                                if (line && !line.startsWith('#') && line.contains('=')) {
+                                    def parts = line.split('=', 2)
+                                    def key = parts[0].trim()
+                                    def value = parts[1].trim()
 
-                                        // Définir les variables d'environnement
-                                        if (key == 'slackWebhookUrl') {
-                                            env.SLACK_WEBHOOK_URL = value
-                                        } else if (key == 'gmailUser') {
-                                            env.GMAIL_USER = value
-                                        } else if (key == 'gmailAppPassword') {
-                                            env.GMAIL_APP_PASSWORD = value
-                                        }
+                                    if (key == 'slackWebhookUrl') {
+                                        env.SLACK_WEBHOOK_URL = value
+                                    } else if (key == 'gmailUser') {
+                                        env.GMAIL_USER = value
+                                    } else if (key == 'gmailAppPassword') {
+                                        env.GMAIL_APP_PASSWORD = value
                                     }
                                 }
-
-                                echo "✅ Configuration loaded successfully"
                             }
+
+                            echo "✅ Configuration loaded successfully"
                         }
+                    } catch (Exception e) {
+                        echo "⚠️ Warning: Could not load gradle.properties: ${e.message}"
+                        echo "Continuing without external configuration..."
                     }
                 }
+            }
+        }
 
         /* ================= ENVIRONMENT CHECK ================= */
         stage('Environment Check') {
@@ -239,16 +240,7 @@ pipeline {
             )
 
             script {
-                try {
-                    slackSend(
-                        channel: "${SLACK_CHANNEL}",
-                        color: 'good',
-                        message: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n• Tests passed\n• Build completed\n• Deployment successful\n<${env.BUILD_URL}|View Build>",
-                        tokenCredentialId: 'slack-webhook-url'
-                    )
-                } catch (Exception e) {
-                    echo "⚠️ Slack notification failed: ${e.message}"
-                }
+                sendSlackNotification('good', "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n• Tests passed\n• Build completed\n• Deployment successful\n<${env.BUILD_URL}|View Build>")
             }
         }
 
@@ -271,16 +263,7 @@ pipeline {
             )
 
             script {
-                try {
-                    slackSend(
-                        channel: "${SLACK_CHANNEL}",
-                        color: 'warning',
-                        message: "⚠️ UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nBuild completed with warnings.\n<${env.BUILD_URL}console|View Console>",
-                        tokenCredentialId: 'slack-webhook-url'
-                    )
-                } catch (Exception e) {
-                    echo "⚠️ Slack notification failed: ${e.message}"
-                }
+                sendSlackNotification('warning', "⚠️ UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nBuild completed with warnings.\n<${env.BUILD_URL}console|View Console>")
             }
         }
 
@@ -302,17 +285,48 @@ pipeline {
             )
 
             script {
-                try {
-                    slackSend(
-                        channel: "${SLACK_CHANNEL}",
-                        color: 'danger',
-                        message: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nPipeline failed!\n<${env.BUILD_URL}console|View Console>",
-                        tokenCredentialId: 'slack-webhook-url'
-                    )
-                } catch (Exception e) {
-                    echo "⚠️ Slack notification failed: ${e.message}"
-                }
+                sendSlackNotification('danger', "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nPipeline failed!\n<${env.BUILD_URL}console|View Console>")
             }
         }
+    }
+}
+
+/* ================= HELPER FUNCTIONS ================= */
+def sendSlackNotification(String color, String message) {
+    try {
+        if (env.SLACK_WEBHOOK_URL) {
+            def payload = """
+            {
+                "channel": "${SLACK_CHANNEL}",
+                "username": "Jenkins Bot",
+                "icon_emoji": ":jenkins:",
+                "attachments": [{
+                    "color": "${color}",
+                    "text": "${message}",
+                    "footer": "Jenkins Pipeline",
+                    "footer_icon": "https://jenkins.io/images/logos/jenkins/jenkins.png"
+                }]
+            }
+            """
+
+            if (isUnix()) {
+                sh """
+                    curl -X POST '${env.SLACK_WEBHOOK_URL}' \
+                    -H 'Content-Type: application/json' \
+                    -d '${payload}'
+                """
+            } else {
+                // Échapper les guillemets pour PowerShell
+                def escapedPayload = payload.replace('"', '\\"').replace('\n', ' ')
+                bat """
+                    powershell -Command "Invoke-RestMethod -Uri '${env.SLACK_WEBHOOK_URL}' -Method Post -Body '${escapedPayload}' -ContentType 'application/json'"
+                """
+            }
+            echo "✅ Slack notification sent successfully"
+        } else {
+            echo "⚠️ Slack webhook URL not configured"
+        }
+    } catch (Exception e) {
+        echo "⚠️ Slack notification failed: ${e.message}"
     }
 }
