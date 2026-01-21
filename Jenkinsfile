@@ -7,16 +7,32 @@ pipeline {
     }
 
     environment {
-        SONARQUBE_ENV = 'SonarQube'  // Nom exact de l'installation SonarQube dans Jenkins
+        SONARQUBE_ENV = 'SonarQube'
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
-        SLACK_WEBHOOK_URL = System.getenv('slackWebhookUrl')
-        GMAIL_USER = 'mm_bensemane@esi.dz'
-        GMAIL_APP_PASSWORD = System.getenv('gmailAppPassword')
         GRADLE_OPTS = '-Djavax.net.ssl.trustStoreType=Windows-ROOT -Djavax.net.ssl.trustStore=NONE'
     }
 
     stages {
+
+        /* ================= LOAD CONFIGURATION ================= */
+        stage('Load Configuration') {
+            steps {
+                script {
+                    // Charger le fichier gradle.properties depuis Config File Provider
+                    configFileProvider([configFile(fileId: 'gradle-properties', variable: 'GRADLE_PROPS_FILE')]) {
+                        def props = readProperties file: env.GRADLE_PROPS_FILE
+
+                        // Définir les variables d'environnement
+                        env.SLACK_WEBHOOK_URL = props['slackWebhookUrl']
+                        env.GMAIL_USER = props['gmailUser']
+                        env.GMAIL_APP_PASSWORD = props['gmailAppPassword']
+
+                        echo "✅ Configuration loaded successfully"
+                    }
+                }
+            }
+        }
 
         /* ================= ENVIRONMENT CHECK ================= */
         stage('Environment Check') {

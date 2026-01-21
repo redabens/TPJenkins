@@ -107,7 +107,7 @@ publishing {
 /* ===================== SLACK ===================== */
 slack {
     builtSucceed {
-        webHook = System.getenv('slackWebhookUrl') // put ur webhook url here
+        webHook = project.property('slackWebhookUrl') // put ur webhook url here
         attachment {
             fallback = "Project successfully built."
             pretext = "Project successfully built."
@@ -130,11 +130,11 @@ sendMail {
     smtpServer {
         host "smtp.gmail.com"
         port 465
-        user System.getenv('gmailUser')
-        password System.getenv('gmailAppPassword') // put ur app password here
+        user project.property('gmailUser')
+        password project.property('gmailAppPassword') // put ur app password here
     }
     mail {
-        from System.getenv('gmailUser')
+        from project.property('gmailUser')
         to "mm_bensemane@esi.dz"
         subject "Build Succeeded: ${project.name}"
     }
