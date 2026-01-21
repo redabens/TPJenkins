@@ -10,9 +10,9 @@ pipeline {
         SONARQUBE_ENV = 'SonarQube'  // Nom exact de l'installation SonarQube dans Jenkins
         EMAIL_RECIPIENTS = 'mm_bensemane@esi.dz'
         SLACK_CHANNEL = '#social'
-        SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
+        SLACK_WEBHOOK_URL = System.getenv('slackWebhookUrl')
         GMAIL_USER = 'mm_bensemane@esi.dz'
-        GMAIL_APP_PASSWORD = credentials('gmail-app-password')
+        GMAIL_APP_PASSWORD = System.getenv('gmailAppPassword')
         GRADLE_OPTS = '-Djavax.net.ssl.trustStoreType=Windows-ROOT -Djavax.net.ssl.trustStore=NONE'
     }
 
