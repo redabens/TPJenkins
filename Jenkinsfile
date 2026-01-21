@@ -17,22 +17,37 @@ pipeline {
 
         /* ================= LOAD CONFIGURATION ================= */
         stage('Load Configuration') {
-            steps {
-                script {
-                    // Charger le fichier gradle.properties depuis Config File Provider
-                    configFileProvider([configFile(fileId: 'gradle-properties', variable: 'GRADLE_PROPS_FILE')]) {
-                        def props = readProperties file: env.GRADLE_PROPS_FILE
+                    steps {
+                        script {
+                            // Charger le fichier gradle.properties depuis Config File Provider
+                            configFileProvider([configFile(fileId: 'gradle-properties', variable: 'GRADLE_PROPS_FILE')]) {
+                                // Lire le contenu du fichier
+                                def propsContent = readFile(env.GRADLE_PROPS_FILE)
 
-                        // Définir les variables d'environnement
-                        env.SLACK_WEBHOOK_URL = props['slackWebhookUrl']
-                        env.GMAIL_USER = props['gmailUser']
-                        env.GMAIL_APP_PASSWORD = props['gmailAppPassword']
+                                // Parser les propriétés manuellement
+                                propsContent.split('\n').each { line ->
+                                    line = line.trim()
+                                    if (line && !line.startsWith('#') && line.contains('=')) {
+                                        def parts = line.split('=', 2)
+                                        def key = parts[0].trim()
+                                        def value = parts[1].trim()
 
-                        echo "✅ Configuration loaded successfully"
+                                        // Définir les variables d'environnement
+                                        if (key == 'slackWebhookUrl') {
+                                            env.SLACK_WEBHOOK_URL = value
+                                        } else if (key == 'gmailUser') {
+                                            env.GMAIL_USER = value
+                                        } else if (key == 'gmailAppPassword') {
+                                            env.GMAIL_APP_PASSWORD = value
+                                        }
+                                    }
+                                }
+
+                                echo "✅ Configuration loaded successfully"
+                            }
+                        }
                     }
                 }
-            }
-        }
 
         /* ================= ENVIRONMENT CHECK ================= */
         stage('Environment Check') {
